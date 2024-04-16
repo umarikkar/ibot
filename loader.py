@@ -7,18 +7,96 @@
 import random
 import math
 import numpy as np
+import os
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple
+from tqdm import tqdm
 
 from torchvision.datasets import ImageFolder
+from torchvision.datasets.vision import VisionDataset
+from torchvision.datasets.folder import default_loader, IMG_EXTENSIONS
+
 
 class ImageFolderInstance(ImageFolder):
     def __getitem__(self, index):
         img, target = super(ImageFolderInstance, self).__getitem__(index)
         return img, target, index
+    
 
-class ImageFolderMask(ImageFolder):
+class MyDatasetFolder(VisionDataset):
+
+    def __init__(
+            self,
+            root: str,
+            loader: Callable[[str], Any],
+            extensions: Optional[Tuple[str, ...]] = None,
+            transform: Optional[Callable] = None,
+            target_transform: Optional[Callable] = None,
+            is_valid_file: Optional[Callable[[str], bool]] = None,
+    ) -> None:
+        super().__init__(root, transform=transform,
+                                            target_transform=target_transform)
+        
+        wsis = os.listdir(root)
+        
+        samples = []
+        print('building SSL dataset ...')
+        for wsi in tqdm(wsis):
+            fl = os.path.join(root, wsi, 'patch_list.npy')
+            if os.path.exists(fl):
+                img_coords = list(np.load(fl))
+                samples.extend([(os.path.join(root, wsi, 'patches', im), -1) for im in img_coords])
+
+        self.loader = loader
+        self.extensions = extensions
+
+        self.samples = samples
+        self.targets = [s[1] for s in samples]
+
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        path, target = self.samples[index]
+        sample = self.loader(path)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return sample, target
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+
+class MyImageFolder(MyDatasetFolder):
+
+    def __init__(
+            self,
+            root: str,
+            transform: Optional[Callable] = None,
+            target_transform: Optional[Callable] = None,
+            loader: Callable[[str], Any] = default_loader,
+            is_valid_file: Optional[Callable[[str], bool]] = None,
+    ):
+        super().__init__(root, loader, IMG_EXTENSIONS if is_valid_file is None else None,
+                                          transform=transform,
+                                          target_transform=target_transform,
+                                          is_valid_file=is_valid_file)
+        self.imgs = self.samples
+
+
+class ImageFolderMask(MyImageFolder):
+
     def __init__(self, *args, patch_size, pred_ratio, pred_ratio_var, pred_aspect_ratio, 
                  pred_shape='block', pred_start_epoch=0, **kwargs):
-        super(ImageFolderMask, self).__init__(*args, **kwargs)
+
+        super().__init__(*args, **kwargs)
         self.psz = patch_size
         self.pred_ratio = pred_ratio[0] if isinstance(pred_ratio, list) and \
             len(pred_ratio) == 1 else pred_ratio
@@ -114,3 +192,5 @@ class ImageFolderMask(ImageFolder):
             masks.append(mask)
 
         return output + (masks,)
+
+

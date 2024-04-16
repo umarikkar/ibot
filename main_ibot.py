@@ -106,8 +106,13 @@ def get_args_parser():
     parser.add_argument('--clip_grad', type=float, default=3.0, help="""Maximal parameter
         gradient norm if using gradient clipping. Clipping with norm .3 ~ 1.0 can
         help optimization for larger ViT architectures. 0 for disabling.""")
-    parser.add_argument('--batch_size_per_gpu', default=128, type=int,
+        
+    # parser.add_argument('--batch_size_per_gpu', default=128, type=int,
+    #     help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
+
+    parser.add_argument('--batch_size_per_gpu', default=32, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
+
     parser.add_argument('--epochs', default=100, type=int, help='Number of epochs of training.')
     parser.add_argument('--freeze_last_layer', default=1, type=int, help="""Number of epochs
         during which we keep the output layer fixed. Typically doing so during
@@ -115,7 +120,7 @@ def get_args_parser():
     parser.add_argument("--lr", default=0.0005, type=float, help="""Learning rate at the end of
         linear warmup (highest LR used during training). The learning rate is linearly scaled
         with the batch size, and specified here for a reference batch size of 256.""")
-    parser.add_argument("--warmup_epochs", default=10, type=int,
+    parser.add_argument("--warmup_epochs", default=3, type=int,
         help="Number of epochs for the linear learning-rate warm up.")
     parser.add_argument('--min_lr', type=float, default=1e-6, help="""Target LR at the
         end of optimization. We use a cosine LR schedule with linear warmup.""")
@@ -127,19 +132,19 @@ def get_args_parser():
     # Multi-crop parameters
     parser.add_argument('--global_crops_number', type=int, default=2, help="""Number of global
         views to generate. Default is to use two global crops. """)
-    parser.add_argument('--global_crops_scale', type=float, nargs='+', default=(0.14, 1.),
+    parser.add_argument('--global_crops_scale', type=float, nargs='+', default=(0.32, 1.),
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for large global view cropping. When disabling multi-crop (--local_crops_number 0), we
         recommand using a wider range of scale ("--global_crops_scale 0.14 1." for example)""")
-    parser.add_argument('--local_crops_number', type=int, default=0, help="""Number of small
+    parser.add_argument('--local_crops_number', type=int, default=10, help="""Number of small
         local views to generate. Set this parameter to 0 to disable multi-crop training.
         When disabling multi-crop we recommend to use "--global_crops_scale 0.14 1." """)
-    parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.05, 0.4),
+    parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.05, 0.32),
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for small local view cropping of multi-crop.""")
 
     # Misc
-    parser.add_argument('--data_path', default='/path/to/imagenet/train/', type=str,
+    parser.add_argument('--data_path', default='/vol/research/fmodel_medical/people/umar/datasets/tcga/tcga-coad/subimages/20x/', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--saveckp_freq', default=40, type=int, help='Save checkpoint every x epochs.')
@@ -165,9 +170,18 @@ def train_ibot(args):
         args.local_crops_number,
     )
     pred_size = args.patch_size * 8 if 'swin' in args.arch else args.patch_size
+    
+    def valid_checker(filename):
+        if filename.endswith('.jpg'):
+            return True
+        else:
+            return False
+    
+    
     dataset = ImageFolderMask(
         args.data_path, 
         transform=transform,
+        is_valid_file=valid_checker,
         patch_size=pred_size,
         pred_ratio=args.pred_ratio,
         pred_ratio_var=args.pred_ratio_var,
