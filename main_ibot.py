@@ -29,6 +29,8 @@ from models.head import iBOTHead
 from loader import ImageFolderMask
 from evaluation.unsupervised.unsup_cls import eval_pred
 
+import timm
+
 def get_args_parser():
     parser = argparse.ArgumentParser('iBOT', add_help=False)
 
@@ -110,13 +112,15 @@ def get_args_parser():
     # parser.add_argument('--batch_size_per_gpu', default=128, type=int,
     #     help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
 
-    parser.add_argument('--batch_size_per_gpu', default=32, type=int,
+    parser.add_argument('--batch_size_per_gpu', default=16, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
 
     parser.add_argument('--epochs', default=100, type=int, help='Number of epochs of training.')
     parser.add_argument('--freeze_last_layer', default=1, type=int, help="""Number of epochs
         during which we keep the output layer fixed. Typically doing so during
         the first epoch helps training. Try increasing this value if the loss does not decrease.""")
+    
+
     parser.add_argument("--lr", default=0.0005, type=float, help="""Learning rate at the end of
         linear warmup (highest LR used during training). The learning rate is linearly scaled
         with the batch size, and specified here for a reference batch size of 256.""")
@@ -126,7 +130,7 @@ def get_args_parser():
         end of optimization. We use a cosine LR schedule with linear warmup.""")
     parser.add_argument('--optimizer', default='adamw', type=str,
         choices=['adamw', 'sgd', 'lars'], help="""Type of optimizer. We recommend using adamw with ViTs.""")
-    parser.add_argument('--load_from', default=None, help="""Path to load checkpoints to resume training.""")
+    parser.add_argument('--load_from', default='checkpoint.pth', help="""Path to load checkpoints to resume training.""")
     parser.add_argument('--drop_path', type=float, default=0.1, help="""Drop path rate for student network.""")
 
     # Multi-crop parameters
@@ -136,7 +140,7 @@ def get_args_parser():
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for large global view cropping. When disabling multi-crop (--local_crops_number 0), we
         recommand using a wider range of scale ("--global_crops_scale 0.14 1." for example)""")
-    parser.add_argument('--local_crops_number', type=int, default=10, help="""Number of small
+    parser.add_argument('--local_crops_number', type=int, default=0, help="""Number of small
         local views to generate. Set this parameter to 0 to disable multi-crop training.
         When disabling multi-crop we recommend to use "--global_crops_scale 0.14 1." """)
     parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.05, 0.32),
@@ -144,10 +148,10 @@ def get_args_parser():
         Used for small local view cropping of multi-crop.""")
 
     # Misc
-    parser.add_argument('--data_path', default='/vol/research/fmodel_medical/people/umar/datasets/tcga/tcga-coad/subimages/20x/', type=str,
+    parser.add_argument('--data_path', default='/vol/research/fmodel_medical/people/umar/datasets/tcga/tcga-coad/psps/20x/', type=str,
         help='Please specify path to the ImageNet training data.')
-    parser.add_argument('--output_dir', default=".", type=str, help='Path to save logs and checkpoints.')
-    parser.add_argument('--saveckp_freq', default=40, type=int, help='Save checkpoint every x epochs.')
+    parser.add_argument('--output_dir', default="out_test", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--saveckp_freq', default=5, type=int, help='Save checkpoint every x epochs.')
     parser.add_argument('--seed', default=0, type=int, help='Random seed.')
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
@@ -156,6 +160,8 @@ def get_args_parser():
     return parser
 
 def train_ibot(args):
+
+
     utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
     print("git:\n  {}\n".format(utils.get_sha()))
@@ -257,6 +263,18 @@ def train_ibot(args):
             shared_head=args.shared_head_teacher,
         ),
     )
+
+    # Load from ImageNet checkpoint!
+    iNet_cpt = torch.load('iBOT_INet_ViT_S_16_checkpoint.pth', map_location='cpu')
+
+    student_cpt = {key.replace('module.', ''): value for key, value in iNet_cpt['student'].items()}
+    teacher_cpt = {key.replace('module.', ''): value for key, value in iNet_cpt['teacher'].items()}
+
+    msg2 = student.load_state_dict(student_cpt, strict=False)
+    msg1 = teacher.load_state_dict(teacher_cpt, strict=False)
+
+    print('loaded image net checkpoint...', msg1, msg2)
+
     # move networks to gpu
     student, teacher = student.cuda(), teacher.cuda()
     # synchronize batch norms (if any)
@@ -335,9 +353,11 @@ def train_ibot(args):
 
     # ============ optionally resume training ... ============
     to_restore = {"epoch": 0}
-    if args.load_from:
+    resume_dir = os.path.join(args.output_dir, args.load_from)
+    if args.load_from and os.path.exists(resume_dir):
+        print('RESUMING FROM CHECKPOINT!')
         utils.restart_from_checkpoint(
-            os.path.join(args.output_dir, args.load_from),
+            resume_dir,
             run_variables=to_restore,
             student=student,
             teacher=teacher,
@@ -429,18 +449,20 @@ def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loade
             all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
             loss = all_loss.pop('loss')
 
+
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
 
-        # log statistics
-        probs1 = teacher_output[0].chunk(args.global_crops_number)
-        probs2 = student_output[0].chunk(args.global_crops_number)
-        pred1 = utils.concat_all_gather(probs1[0].max(dim=1)[1]) 
-        pred2 = utils.concat_all_gather(probs2[1].max(dim=1)[1])
-        acc = (pred1 == pred2).sum() / pred1.size(0)
-        pred_labels.append(pred1)
-        real_labels.append(utils.concat_all_gather(labels.to(pred1.device)))
+
+        # # log statistics
+        # probs1 = teacher_output[0].chunk(args.global_crops_number)
+        # probs2 = student_output[0].chunk(args.global_crops_number)
+        # pred1 = utils.concat_all_gather(probs1[0].max(dim=1)[1]) 
+        # pred2 = utils.concat_all_gather(probs2[1].max(dim=1)[1])
+        # acc = (pred1 == pred2).sum() / pred1.size(0)
+        # pred_labels.append(pred1)
+        # real_labels.append(utils.concat_all_gather(labels.to(pred1.device)))
 
         # student update
         optimizer.zero_grad()
@@ -475,17 +497,18 @@ def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loade
             metric_logger.update(**{key: value.item()})
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
-        metric_logger.update(acc=acc)
+        # metric_logger.update(acc=acc)
 
-    pred_labels = torch.cat(pred_labels).cpu().detach().numpy()
-    real_labels = torch.cat(real_labels).cpu().detach().numpy()
-    nmi, ari, fscore, adjacc = eval_pred(real_labels, pred_labels, calc_acc=False)
+    # pred_labels = torch.cat(pred_labels).cpu().detach().numpy()
+    # real_labels = torch.cat(real_labels).cpu().detach().numpy()
+    # nmi, ari, fscore, adjacc = eval_pred(real_labels, pred_labels, calc_acc=False)
+    # nmi, ari, fscore, adjacc = 0,0,0,0
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("NMI: {}, ARI: {}, F: {}, ACC: {}".format(nmi, ari, fscore, adjacc))
+    # print("NMI: {}, ARI: {}, F: {}, ACC: {}".format(nmi, ari, fscore, adjacc))
     print("Averaged stats:", metric_logger)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    return_dict.update({"nmi": nmi, "ari": ari, "fscore": fscore, "adjacc": adjacc})
+    # return_dict.update({"nmi": nmi, "ari": ari, "fscore": fscore, "adjacc": adjacc})
     return return_dict
 
 
@@ -569,7 +592,7 @@ class iBOTLoss(nn.Module):
         total_loss = dict(cls=total_loss1, patch=total_loss2, loss=total_loss1 + total_loss2)
         self.update_center(teacher_cls, teacher_patch)                  
         return total_loss
-
+    
     @torch.no_grad()
     def update_center(self, teacher_cls, teacher_patch):
         """
@@ -584,6 +607,8 @@ class iBOTLoss(nn.Module):
         dist.all_reduce(patch_center)
         patch_center = patch_center / (len(teacher_patch) * dist.get_world_size())
         self.center2 = self.center2 * self.center_momentum2 + patch_center * (1 - self.center_momentum2)
+
+
 
 class DataAugmentationiBOT(object):
     def __init__(self, global_crops_scale, local_crops_scale, global_crops_number, local_crops_number):
@@ -638,5 +663,8 @@ class DataAugmentationiBOT(object):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('iBOT', parents=[get_args_parser()])
     args = parser.parse_args()
+
+    args.output_dir = os.path.join(os.getcwd(), 'results', args.output_dir)
+
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     train_ibot(args)

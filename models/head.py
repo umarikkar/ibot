@@ -78,8 +78,10 @@ class DINOHead(nn.Module):
                 self.mlp = nn.Linear(in_dim, out_dim)
         else:
             layers = [nn.Linear(in_dim, hidden_dim)]
+
             if norm is not None:
                 layers.append(norm)
+
             layers.append(act)
             for _ in range(nlayers - 2):
                 layers.append(nn.Linear(hidden_dim, hidden_dim))
@@ -90,14 +92,20 @@ class DINOHead(nn.Module):
                 layers.append(nn.Linear(hidden_dim, bottleneck_dim))
             else:
                 layers.append(nn.Linear(hidden_dim, out_dim))
+
             self.mlp = CustomSequential(*layers)
+            # self.mlp_low1 = CustomSequential(*layers)
+            # self.mlp_low2 = CustomSequential(*layers)
+
         self.apply(self._init_weights)
         
         if bottleneck_dim > 0:
             self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
             self.last_layer.weight_g.data.fill_(1)
+
             if norm_last_layer:
                 self.last_layer.weight_g.requires_grad = False
+  
         else:
             self.last_layer = None
 
@@ -197,3 +205,4 @@ class iBOTHead(DINOHead):
             x2 = self.last_norm2(x2)
         
         return x1, x2
+

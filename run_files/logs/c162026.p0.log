@@ -1,0 +1,31 @@
+000 (162026.000.000) 2024-04-17 14:13:24 Job submitted from host: <131.227.81.127:9618?addrs=131.227.81.127-9618&alias=aisurrey-condor.surrey.ac.uk&noUDP&sock=schedd_3128563_92e2>
+...
+040 (162026.000.000) 2024-04-17 19:37:10 Started transferring input files
+	Transferring to host: <131.227.80.156:9618?addrs=131.227.80.156-9618&alias=aisurrey12.surrey.ac.uk&noUDP&sock=slot1_3_9828_7709_35654>
+...
+040 (162026.000.000) 2024-04-17 19:37:10 Finished transferring input files
+...
+001 (162026.000.000) 2024-04-17 19:37:11 Job executing on host: <131.227.80.156:9618?addrs=131.227.80.156-9618&alias=aisurrey12.surrey.ac.uk&noUDP&sock=startd_9623_27f4>
+...
+040 (162026.000.000) 2024-04-17 19:37:12 Started transferring output files
+...
+040 (162026.000.000) 2024-04-17 19:37:12 Finished transferring output files
+...
+005 (162026.000.000) 2024-04-17 19:37:12 Job terminated.
+	(1) Normal termination (return value 2)
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Local Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Total Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Total Local Usage
+	66  -  Run Bytes Sent By Job
+	531  -  Run Bytes Received By Job
+	66  -  Total Bytes Sent By Job
+	531  -  Total Bytes Received By Job
+	Partitionable Resources :    Usage  Request Allocated Assigned
+	   Cpus                 :        0       32        32 
+	   Disk (KB)            :       25        1    652975 
+	   Gpus (Average)       :                 4         4 "CUDA2,CUDA3,CUDA4,CUDA5"
+	   Memory (MB)          :            122880    122880 
+
+	Job terminated of its own accord at 2024-04-17T18:37:12Z.
+...

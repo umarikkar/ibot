@@ -10,6 +10,7 @@ import numpy as np
 import os
 from typing import Any, Callable, cast, Dict, List, Optional, Tuple
 from tqdm import tqdm
+import torch
 
 from torchvision.datasets import ImageFolder
 from torchvision.datasets.vision import VisionDataset
@@ -39,12 +40,18 @@ class MyDatasetFolder(VisionDataset):
         wsis = os.listdir(root)
         
         samples = []
+        
         print('building SSL dataset ...')
         for wsi in tqdm(wsis):
             fl = os.path.join(root, wsi, 'patch_list.npy')
             if os.path.exists(fl):
                 img_coords = list(np.load(fl))
                 samples.extend([(os.path.join(root, wsi, 'patches', im), -1) for im in img_coords])
+
+        rr = 4e+6
+        if len(samples) > rr:
+            r = torch.randperm(len(samples))[:int(rr)]
+            samples = [samples[i] for i in r]
 
         self.loader = loader
         self.extensions = extensions

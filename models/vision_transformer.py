@@ -240,6 +240,7 @@ class VisionTransformer(nn.Module):
             return_all_tokens is None else return_all_tokens
         if return_all_tokens:
             return x
+        
         return x[:, 0]
 
     def get_last_selfattention(self, x):

@@ -6,8 +6,9 @@
 
 # --------------------------------------
 # Executable and its arguments
-executable    = pretrain.sh
-JobBatchName = 'ibot_coad_vit_small_patch16_2_10'
+executable    = pretrain_weka.sh
+JobBatchName = $(output_dir)
+arguments = $(request_GPUs) $(bs) $(output_dir) $(global_crops) $(local_crops)
 
 # -----------------------------------
 # Universe (vanilla, docker)
@@ -15,18 +16,23 @@ universe         = vanilla
 
 # -------------------------------------
 # Event, out and error logs
-log    = logs/c$(cluster).p$(process).log
-output = logs/c$(cluster).p$(process).out
-error  = logs/c$(cluster).p$(process).error
+log    = logs_weka/c$(cluster).p$(process).log
+output = logs_weka/c$(cluster).p$(process).out
+error  = logs_weka/c$(cluster).p$(process).error
 
 # -----------------------------------
 # File Transfer, Input, Output
 should_transfer_files = YES
-environment = "mount=$ENV(PWD),/vol/research/fmodel_medical/people/umar/miniconda3/,/vol/research/fmodel_medical/people/umar/ibot/,/vol/research/fmodel_medical/people/umar/datasets/tcga/tcga-coad/"
+
+conda_dir = /mnt/fast/nobackup/users/um00109/umar/miniconda3/
+data_dir = /mnt/fast/nobackup/scratch4weeks/um00109/tcga/tcga-coad/
+project_dir = /mnt/fast/nobackup/users/um00109/umar/ibot/
+
+environment = "mount=$ENV(PWD),$(conda_dir),$(data_dir),$(project_dir)"
 
 # -------------------------------------
 # Requirements for the Job (Requirements are explained in further detail in example09.submit_file)
-requirements = (HasStornext) && (Machine!="creative01.eps.surrey.ac.uk") && (Machine!="cogvis3.eps.surrey.ac.uk") && (Machine!="biosecure01.eps.surrey.ac.uk") && (Machine!="nimrodel.eps.surrey.ac.uk")
+requirements = (HasWeka) && (Machine=="aisurrey15.eps.surrey.ac.uk" || Machine=="aisurrey16.eps.surrey.ac.uk")
 
 # -------------------------------------
 # Resources
@@ -42,7 +48,11 @@ stream_output = True
 
 # -----------------------------------
 # Queue commands
+bs = 32
 
+global_crops=2
+local_crops=10
+output_dir = 'iNet_coad_$(global_crops)_$(local_crops)/'
 
 queue 1 
 

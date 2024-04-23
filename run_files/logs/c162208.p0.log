@@ -1,0 +1,93 @@
+000 (162208.000.000) 2024-04-18 11:10:43 Job submitted from host: <131.227.81.127:9618?addrs=131.227.81.127-9618&alias=aisurrey-condor.surrey.ac.uk&noUDP&sock=schedd_3128563_92e2>
+...
+040 (162208.000.000) 2024-04-18 15:50:59 Started transferring input files
+	Transferring to host: <131.227.80.158:9618?addrs=131.227.80.158-9618&alias=aisurrey13.surrey.ac.uk&noUDP&sock=slot1_4_9978_274f_37104>
+...
+040 (162208.000.000) 2024-04-18 15:50:59 Finished transferring input files
+...
+001 (162208.000.000) 2024-04-18 15:51:00 Job executing on host: <131.227.80.158:9618?addrs=131.227.80.158-9618&alias=aisurrey13.surrey.ac.uk&noUDP&sock=startd_9772_5b90>
+...
+006 (162208.000.000) 2024-04-18 15:51:08 Image size of job updated: 1
+	1  -  MemoryUsage of job (MB)
+	2024  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 15:56:09 Image size of job updated: 36811
+	36811  -  MemoryUsage of job (MB)
+	37694516  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:01:10 Image size of job updated: 40677
+	40677  -  MemoryUsage of job (MB)
+	41653280  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:06:11 Image size of job updated: 44203
+	44203  -  MemoryUsage of job (MB)
+	45264780  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:11:12 Image size of job updated: 47282
+	47282  -  MemoryUsage of job (MB)
+	48417404  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:16:14 Image size of job updated: 49966
+	49966  -  MemoryUsage of job (MB)
+	51165984  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:21:13 Image size of job updated: 52471
+	52471  -  MemoryUsage of job (MB)
+	53730388  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:26:14 Image size of job updated: 54721
+	54721  -  MemoryUsage of job (MB)
+	56035040  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:31:14 Image size of job updated: 56880
+	56880  -  MemoryUsage of job (MB)
+	58245560  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:36:15 Image size of job updated: 58913
+	58913  -  MemoryUsage of job (MB)
+	60327164  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:41:15 Image size of job updated: 60828
+	60828  -  MemoryUsage of job (MB)
+	62288236  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:46:16 Image size of job updated: 62642
+	62642  -  MemoryUsage of job (MB)
+	64145628  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:51:16 Image size of job updated: 64503
+	64503  -  MemoryUsage of job (MB)
+	66051972  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 16:56:16 Image size of job updated: 66414
+	66414  -  MemoryUsage of job (MB)
+	68008928  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 17:01:16 Image size of job updated: 68189
+	68189  -  MemoryUsage of job (MB)
+	69826472  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 17:06:16 Image size of job updated: 69910
+	69910  -  MemoryUsage of job (MB)
+	71587880  -  ResidentSetSize of job (KB)
+...
+006 (162208.000.000) 2024-04-18 17:11:17 Image size of job updated: 69973
+	69973  -  MemoryUsage of job (MB)
+	71653116  -  ResidentSetSize of job (KB)
+...
+004 (162208.000.000) 2024-04-19 16:14:42 Job was evicted.
+	(0) CPU times
+		Usr 24 15:06:01, Sys 2 07:21:29  -  Run Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Local Usage
+	0  -  Run Bytes Sent By Job
+	465  -  Run Bytes Received By Job
+	Partitionable Resources :    Usage  Request Allocated Assigned
+	   Cpus                 :     0.00       32        32 
+	   Disk (KB)            :    57           1    652975 
+	   Gpus (Average)       :     3.12        4         4 "CUDA1,CUDA2,CUDA3,CUDA6"
+	   GpusMemory (MB)      :  8450                       
+	   Memory (MB)          : 69973      122880    122880 
+...
+009 (162208.000.000) 2024-04-19 16:14:42 Job was aborted.
+	via condor_rm (by user um00109)
+...
