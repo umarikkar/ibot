@@ -206,3 +206,34 @@ class iBOTHead(DINOHead):
         
         return x1, x2
 
+
+class CLSHead(nn.Module):
+    def __init__(self, in_dim, BN_last=False, bottleneck_dim=256, nlayers=3, hidden_dim=4096):
+        super().__init__()
+        nlayers = max(nlayers, 1)
+        if nlayers == 1:
+            self.mlp = nn.Linear(in_dim, bottleneck_dim)
+        else:
+            layers = [nn.Linear(in_dim, hidden_dim)]
+            #layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.GELU())
+            for _ in range(nlayers - 2):
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                #layers.append(nn.BatchNorm1d(hidden_dim))
+                layers.append(nn.GELU())
+            layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+            if BN_last:
+                layers.append(nn.BatchNorm1d(bottleneck_dim, affine=False))
+            
+            self.mlp = nn.Sequential(*layers)
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.mlp(x)
+        return x

@@ -6,7 +6,7 @@
 
 # --------------------------------------
 # Executable and its arguments
-executable    = pretrain_weka.sh
+executable    = pretrain_stornext_simclr.sh
 JobBatchName = $(output_dir)
 arguments = $(request_GPUs) $(bs) $(output_dir) $(global_crops) $(local_crops)
 
@@ -16,28 +16,28 @@ universe         = vanilla
 
 # -------------------------------------
 # Event, out and error logs
-log    = logs_weka/c$(cluster).p$(process).log
-output = logs_weka/c$(cluster).p$(process).out
-error  = logs_weka/c$(cluster).p$(process).error
+log    = logs_stornext/c$(cluster).p$(process).log
+output = logs_stornext/c$(cluster).p$(process).out
+error  = logs_stornext/c$(cluster).p$(process).error
 
 # -----------------------------------
 # File Transfer, Input, Output
 should_transfer_files = YES
 
-conda_dir = /mnt/fast/nobackup/users/um00109/umar/miniconda3/
-data_dir = /mnt/fast/nobackup/scratch4weeks/um00109/tcga/tcga-coad/
-project_dir = /mnt/fast/nobackup/users/um00109/umar/ibot/
+conda_dir = /vol/research/fmodel_medical/people/umar/miniconda3/
+data_dir = /vol/research/fmodel_medical/people/umar/datasets/tcga/tcga-coad/
+project_dir = /vol/research/fmodel_medical/people/umar/ibot/
 
 environment = "mount=$ENV(PWD),$(conda_dir),$(data_dir),$(project_dir)"
 
 # -------------------------------------
 # Requirements for the Job (Requirements are explained in further detail in example09.submit_file)
-requirements = (HasWeka) && (Machine=="aisurrey15.eps.surrey.ac.uk" || Machine=="aisurrey16.eps.surrey.ac.uk")
+requirements = (HasStornext)
 
 # -------------------------------------
 # Resources
 request_GPUs     = 4
-request_CPUs     = 32
+request_CPUs     = 31
 request_memory = 120G
 
 +CanCheckpoint = true
@@ -52,7 +52,7 @@ bs = 32
 
 global_crops=2
 local_crops=10
-output_dir = 'iNet_coad_$(global_crops)_$(local_crops)_gpu$(request_GPUs)_weka'
+output_dir = 'iNet_coad_$(global_crops)_$(local_crops)_gpu$(request_GPUs)'
 
 queue 1 
 

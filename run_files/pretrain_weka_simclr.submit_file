@@ -6,7 +6,7 @@
 
 # --------------------------------------
 # Executable and its arguments
-executable    = pretrain_weka.sh
+executable    = pretrain_weka_simclr.sh
 JobBatchName = $(output_dir)
 arguments = $(request_GPUs) $(bs) $(output_dir) $(global_crops) $(local_crops)
 

@@ -25,9 +25,10 @@ from PIL import Image
 from torchvision import datasets, transforms
 from torchvision import models as torchvision_models
 from tensorboardX import SummaryWriter
-from models.head import iBOTHead
+from models.head import iBOTHead, CLSHead
 from loader import ImageFolderMask
 from evaluation.unsupervised.unsup_cls import eval_pred
+import models.vision_transformer2 as vits
 
 import timm
 
@@ -51,6 +52,12 @@ def get_args_parser():
         output for [CLS] token.""")
     parser.add_argument('--patch_out_dim', default=8192, type=int, help="""Dimensionality of
         output for patch tokens.""")
+    
+
+    parser.add_argument('--contrastive_multilevel', default='2-5-8', type=str, help="""Dimensionality of
+        output for patch tokens.""")
+    parser.add_argument('--simclr_temp', default=0.2, type=float, help="tempreture for SimCLR.")
+
     parser.add_argument('--shared_head', default=False, type=utils.bool_flag, help="""Wether to share 
         the same head for [CLS] token output and patch tokens output. When set to false, patch_out_dim
         is ignored and enforced to be same with out_dim. (Default: False)""")
@@ -80,6 +87,8 @@ def get_args_parser():
         loss over [CLS] tokens (Default: 1.0)""")
     parser.add_argument('--lambda2', default=1.0, type=float, help="""loss weight for beit 
         loss over masked patch tokens (Default: 1.0)""")
+    
+
         
     # Temperature teacher parameters
     parser.add_argument('--warmup_teacher_temp', default=0.04, type=float,
@@ -222,14 +231,14 @@ def train_ibot(args):
         )
         embed_dim = student.num_features
     # if the network is a vision transformer (i.e. vit_tiny, vit_small, vit_base, vit_large)
-    elif args.arch in models.__dict__.keys():
-        student = models.__dict__[args.arch](
+    elif args.arch in vits.__dict__.keys():
+        student = vits.__dict__[args.arch](
             patch_size=args.patch_size,
             drop_path_rate=args.drop_path,
             return_all_tokens=True,
             masked_im_modeling=args.use_masked_im_modeling,
         )
-        teacher = models.__dict__[args.arch](
+        teacher = vits.__dict__[args.arch](
             patch_size=args.patch_size,
             return_all_tokens=True,
         )
@@ -243,7 +252,7 @@ def train_ibot(args):
         print(f"Unknow architecture: {args.arch}")
 
     # multi-crop wrapper handles forward with inputs of different resolutions
-    student = utils.MultiCropWrapper(student, iBOTHead(
+    student = FullPipline(student, iBOTHead(
         embed_dim,
         args.out_dim,
         patch_out_dim=args.patch_out_dim,
@@ -251,8 +260,9 @@ def train_ibot(args):
         act=args.act_in_head,
         norm_last_layer=args.norm_last_layer,
         shared_head=args.shared_head,
-    ))
-    teacher = utils.MultiCropWrapper(
+    ), CLSHead(embed_dim), CLSHead(embed_dim)
+        )
+    teacher = FullPipline(
         teacher,
         iBOTHead(
             embed_dim, 
@@ -261,7 +271,7 @@ def train_ibot(args):
             norm=args.norm_in_head,
             act=args.act_in_head,
             shared_head=args.shared_head_teacher,
-        ),
+        ), CLSHead(embed_dim), CLSHead(embed_dim)
     )
 
     # Load from ImageNet checkpoint!
@@ -315,6 +325,8 @@ def train_ibot(args):
         lambda2=args.lambda2,
         mim_start_epoch=args.pred_start_epoch,
     ).cuda()
+
+    simclr_loss = SimCLR(args.simclr_temp).cuda()
 
     if utils.is_main_process(): # Tensorboard configuration
         local_runs = os.path.join(args.output_dir, 'tf_logs')
@@ -374,7 +386,7 @@ def train_ibot(args):
         data_loader.dataset.set_epoch(epoch)
 
         # ============ training one epoch of iBOT ... ============
-        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss,
+        train_stats = train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, simclr_loss,
             data_loader, optimizer, lr_schedule, wd_schedule, momentum_schedule,
             epoch, fp16_scaler, args)
 
@@ -405,7 +417,8 @@ def train_ibot(args):
     print('Training time {}'.format(total_time_str))
 
 
-def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loader,
+
+def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, simclr_loss, data_loader,
                     optimizer, lr_schedule, wd_schedule, momentum_schedule,epoch,
                     fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -423,8 +436,9 @@ def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loade
     params_q = [param_q for name_q, param_q in zip(names_q, params_q) if name_q in names_common]
     params_k = [param_k for name_k, param_k in zip(names_k, params_k) if name_k in names_common]
 
-    pred_labels, real_labels = [], []
+    #pred_labels, real_labels = [], []
     for it, (images, labels, masks) in enumerate(metric_logger.log_every(data_loader, 10, header)):
+
         # update weight decay and learning rate according to their schedule
         it = len(data_loader) * epoch + it  # global training iteration
         for i, param_group in enumerate(optimizer.param_groups):
@@ -438,31 +452,25 @@ def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loade
         
         with torch.cuda.amp.autocast(fp16_scaler is not None):
             # get global views
-            teacher_output = teacher(images[:args.global_crops_number])
-            student_output = student(images[:args.global_crops_number], mask=masks[:args.global_crops_number])
+            teacher_output, t_ml_ftrs_L, t_ml_ftrs_G = teacher(images[:args.global_crops_number], multilevel_ftrs=args.contrastive_multilevel)
+            student_output, s_ml_ftrs_L, s_ml_ftrs_G = student(images[:args.global_crops_number], mask=masks[:args.global_crops_number], multilevel_ftrs=args.contrastive_multilevel)
             
             # get local views
             student.module.backbone.masked_im_modeling = False
-            student_local_cls = student(images[args.global_crops_number:])[0] if len(images) > args.global_crops_number else None
+            student_local_cls = student(images[args.global_crops_number:])[0][0] if len(images) > args.global_crops_number else None
             student.module.backbone.masked_im_modeling = args.use_masked_im_modeling
 
             all_loss = ibot_loss(student_output, teacher_output, student_local_cls, masks, epoch)
-            loss = all_loss.pop('loss')
-
+            
+            ########## SIMCLR
+            loss_c_L = simclr_loss('L', s_ml_ftrs_L, t_ml_ftrs_L, masks[:args.global_crops_number], args)
+            loss_c_G = simclr_loss('G', s_ml_ftrs_G, t_ml_ftrs_G, None, args)
+            
+            loss = all_loss.pop('loss') + loss_c_L + loss_c_G
 
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()), force=True)
             sys.exit(1)
-
-
-        # # log statistics
-        # probs1 = teacher_output[0].chunk(args.global_crops_number)
-        # probs2 = student_output[0].chunk(args.global_crops_number)
-        # pred1 = utils.concat_all_gather(probs1[0].max(dim=1)[1]) 
-        # pred2 = utils.concat_all_gather(probs2[1].max(dim=1)[1])
-        # acc = (pred1 == pred2).sum() / pred1.size(0)
-        # pred_labels.append(pred1)
-        # real_labels.append(utils.concat_all_gather(labels.to(pred1.device)))
 
         # student update
         optimizer.zero_grad()
@@ -493,22 +501,17 @@ def train_one_epoch(student, teacher, teacher_without_ddp, ibot_loss, data_loade
         # logging
         torch.cuda.synchronize()
         metric_logger.update(loss=loss.item())
+        metric_logger.update(loss_c_L=loss_c_L.item())
+        metric_logger.update(loss_c_G=loss_c_G.item())
         for key, value in all_loss.items():
             metric_logger.update(**{key: value.item()})
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
-        # metric_logger.update(acc=acc)
+        #metric_logger.update(acc=acc)
 
-    # pred_labels = torch.cat(pred_labels).cpu().detach().numpy()
-    # real_labels = torch.cat(real_labels).cpu().detach().numpy()
-    # nmi, ari, fscore, adjacc = eval_pred(real_labels, pred_labels, calc_acc=False)
-    # nmi, ari, fscore, adjacc = 0,0,0,0
-    # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    # print("NMI: {}, ARI: {}, F: {}, ACC: {}".format(nmi, ari, fscore, adjacc))
     print("Averaged stats:", metric_logger)
     return_dict = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    # return_dict.update({"nmi": nmi, "ari": ari, "fscore": fscore, "adjacc": adjacc})
     return return_dict
 
 
@@ -592,7 +595,7 @@ class iBOTLoss(nn.Module):
         total_loss = dict(cls=total_loss1, patch=total_loss2, loss=total_loss1 + total_loss2)
         self.update_center(teacher_cls, teacher_patch)                  
         return total_loss
-    
+
     @torch.no_grad()
     def update_center(self, teacher_cls, teacher_patch):
         """
@@ -607,6 +610,121 @@ class iBOTLoss(nn.Module):
         dist.all_reduce(patch_center)
         patch_center = patch_center / (len(teacher_patch) * dist.get_world_size())
         self.center2 = self.center2 * self.center_momentum2 + patch_center * (1 - self.center_momentum2)
+
+"""
+SimCLR loss
+"""
+class SimCLR(nn.Module):
+    def __init__(self, temp=0.2, kernel=2):
+        super().__init__()
+        
+        self.temp = temp
+        self.kernel = kernel
+        
+    def contrastive_loss(self, q, k):
+        
+        # normalize
+        q = nn.functional.normalize(q, dim=1)
+        k = nn.functional.normalize(k, dim=1)
+        
+        # gather all targets
+        #k = concat_all_gather(k)
+        logits = torch.einsum('nc,mc->nm', [q, k]) / self.temp
+        N = logits.shape[0] 
+        
+        labels = (torch.arange(N, dtype=torch.long)).cuda()
+        #labels = (torch.arange(N, dtype=torch.long) + N).cuda()
+        return nn.CrossEntropyLoss()(logits, labels) * (2 * self.temp)
+
+    def forward(self, type_, s_ml_ftrs, t_ml_ftrs, masks, args):
+
+        if type_ == 'L':
+            simclr_loss = 0.
+            masked_tokens = torch.cat(masks[0:]).flatten(1)
+            for L in range(len(s_ml_ftrs)):
+                
+                
+                s_ftrs = s_ml_ftrs[L][masked_tokens]
+                t_ftrs = t_ml_ftrs[L][masked_tokens].detach()
+                
+                
+                #input_boolean_mask= (torch.FloatTensor(len(s_ftrs)).uniform_()>0.5)
+                
+                #simclr_loss += self.contrastive_loss(s_ftrs[input_boolean_mask], t_ftrs[input_boolean_mask]) 
+                simclr_loss += self.contrastive_loss(s_ftrs, t_ftrs) 
+    
+            simclr_loss /= len(s_ml_ftrs)
+            
+            return simclr_loss
+            
+        else:
+            simclr_loss = 0.
+            
+            for L in range(len(s_ml_ftrs)):
+                student_out = s_ml_ftrs[L].chunk(2)
+        
+                teacher_out = t_ml_ftrs[L].detach().chunk(2)
+        
+                simclr_loss += (self.contrastive_loss(student_out[0], teacher_out[1]) + self.contrastive_loss(student_out[1], teacher_out[0]))
+                
+            simclr_loss /= len(s_ml_ftrs)
+            
+            return simclr_loss
+        
+
+
+@torch.no_grad()
+def concat_all_gather(tensor):
+    tensors_gather = [torch.ones_like(tensor)
+        for _ in range(torch.distributed.get_world_size())]
+    torch.distributed.all_gather(tensors_gather, tensor, async_op=False)
+
+    output = torch.cat(tensors_gather, dim=0)
+    return output
+
+from einops import rearrange 
+class FullPipline(nn.Module):
+    def __init__(self, backbone, head=None, head_contra_L=None, head_contra_G=None):
+        super(FullPipline, self).__init__()
+
+        
+        backbone.fc, backbone.head = nn.Identity(), nn.Identity()
+        self.backbone = backbone
+        self.head = nn.Identity() if head is None else head
+        self.head_contra_L = nn.Identity() if head_contra_L is None else head_contra_L
+        self.head_contra_G = nn.Identity() if head_contra_G is None else head_contra_G
+
+    def forward(self, x, mask=None, return_backbone_feat=False, **kwargs):
+ 
+        inp_x = torch.cat(x[0:])
+
+        if mask is not None:
+            inp_m = torch.cat(mask[0:])
+            kwargs.update(dict(mask=inp_m))
+
+        _out, multilevel_embed = self.backbone(inp_x, **kwargs)
+        
+        if multilevel_embed:
+            L = len(multilevel_embed)
+            N = multilevel_embed[0].shape[1]
+            
+            multilevel_ftrs = torch.cat(multilevel_embed[0:])
+            
+            multilevel_ftrs_L = rearrange(multilevel_ftrs[:, 1:], "B N D -> (B N) D")
+            multilevel_ftrs_L = self.head_contra_L(multilevel_ftrs_L)
+            multilevel_ftrs_L = rearrange(multilevel_ftrs_L, "(B N) D -> B N D", N=(N-1))
+            multilevel_ftrs_L = multilevel_ftrs_L.chunk(L)
+
+            multilevel_ftrs_G = self.head_contra_G(multilevel_ftrs[:, 0])
+            multilevel_ftrs_G = multilevel_ftrs_G.chunk(L)
+            
+        else:
+            multilevel_ftrs_L, multilevel_ftrs_G = None, None
+     
+        if return_backbone_feat:
+            return _out, self.head(_out)
+        
+        return self.head(_out), multilevel_ftrs_L, multilevel_ftrs_G 
 
 
 
@@ -664,7 +782,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('iBOT', parents=[get_args_parser()])
     args = parser.parse_args()
 
-    args.output_dir = os.path.join(os.getcwd(), 'results', args.output_dir)
+    args.output_dir = os.path.join(os.getcwd(), 'results_simclr', args.output_dir)
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     train_ibot(args)
